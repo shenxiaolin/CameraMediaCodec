@@ -6,6 +6,7 @@ import android.view.Display;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.Button;
 
 /**
  * Created by wangqiangqiang on 2016/12/1.
@@ -36,10 +37,13 @@ public class MainActivity extends Activity {
         findViewById(R.id.start_recorder).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                Button button = (Button) v;
                 isRecorder = !isRecorder;
                 if(isRecorder){
+                    button.setText("停止录制");
                     callback.startEncodec();
                 }else{
+                    button.setText("开始录制");
                     callback.stopEncodec();;
                 }
             }

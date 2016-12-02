@@ -67,7 +67,7 @@ public class SurfaceCallback implements SurfaceHolder.Callback,SurfaceTexture.On
         file = new File(file,"camera_"+new Date().getTime()+".mp4");
         try {
             mCircEncoder = new CircularEncoder(VIDEO_WIDTH, VIDEO_HEIGHT, 6000000,25, 7, mHandler,file);
-        } catch (IOException ioe) {
+        } catch (Exception ioe) {
             throw new RuntimeException(ioe);
         }
         mEncoderSurface = new WindowSurface(mEglCore, mCircEncoder.getInputSurface(), true);
@@ -147,11 +147,6 @@ public class SurfaceCallback implements SurfaceHolder.Callback,SurfaceTexture.On
         isRecorder = false;
     }
     private CircularEncoder.Callback mHandler = new CircularEncoder.Callback() {
-        @Override
-        public void fileSaveComplete(int status) {
-            Log.d("wqq","写文件结果"+status);
-        }
-
         @Override
         public void bufferStatus(long totalTimeMsec) {
 

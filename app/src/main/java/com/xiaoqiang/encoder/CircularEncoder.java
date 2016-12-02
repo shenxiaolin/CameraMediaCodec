@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Created by wangqiangqiang on 2016/12/1.
@@ -29,25 +30,10 @@ public class CircularEncoder {
     private EncoderThread mEncoderThread;
     private Surface mInputSurface;
     private MediaCodec mEncoder;
-    private MediaMuxer mMediaMuxer = null;
-
     /**
      * Callback function definitions.  CircularEncoder caller must provide one.
      */
     public interface Callback {
-        /**
-         * Called some time after saveVideo(), when all data has been written to the
-         * output file.
-         *
-         * @param status Zero means success, nonzero indicates failure.
-         */
-        void fileSaveComplete(int status);
-
-        /**
-         * Called occasionally.
-         *
-         * @param totalTimeMsec Total length, in milliseconds, of buffered video.
-         */
         void bufferStatus(long totalTimeMsec);
     }
 
@@ -100,15 +86,10 @@ public class CircularEncoder {
         mInputSurface = mEncoder.createInputSurface();
         mEncoder.start();
 
-        try {
-            mMediaMuxer = new MediaMuxer(file.getPath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
 
         // Start the encoder thread last.  That way we're sure it can see all of the state
         // we've initialized.
-        mEncoderThread = new EncoderThread(mEncoder, encBuffer,mMediaMuxer, cb);
+        mEncoderThread = new EncoderThread(mEncoder, encBuffer,file, cb);
         mEncoderThread.start();
         mEncoderThread.waitUntilReady();
     }
@@ -136,10 +117,6 @@ public class CircularEncoder {
             Log.w(TAG, "Encoder thread join() was interrupted", ie);
         }
 
-        if(mMediaMuxer != null){
-            mMediaMuxer.stop();
-            mMediaMuxer.release();
-        }
         if (mEncoder != null) {
             mEncoder.stop();
             mEncoder.release();
@@ -205,14 +182,22 @@ public class CircularEncoder {
         private final Object mLock = new Object();
         private volatile boolean mReady = false;
         private MediaMuxer mMediaMuxer;
+        private File mFile;
+        private  int trackIndex = 0;
+        private AtomicBoolean isStartMediaMuxer = new AtomicBoolean(false);
 
-        public EncoderThread(MediaCodec mediaCodec, CircularEncoderBuffer encBuffer,MediaMuxer mMediaMuxer,
+        public EncoderThread(MediaCodec mediaCodec, CircularEncoderBuffer encBuffer,File file,
                              CircularEncoder.Callback callback) {
             mEncoder = mediaCodec;
             mEncBuffer = encBuffer;
             mCallback = callback;
-            this.mMediaMuxer = mMediaMuxer;
+            mFile = file;
             mBufferInfo = new MediaCodec.BufferInfo();
+            try {
+                mMediaMuxer = new MediaMuxer(mFile.getPath(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
 
         /**
@@ -272,12 +257,10 @@ public class CircularEncoder {
          */
         public void drainEncoder() {
             final int TIMEOUT_USEC = 0;     // no timeout -- check for buffers, bail if none
-
             ByteBuffer[] encoderOutputBuffers = mEncoder.getOutputBuffers();
-
-            int trackIndex = 0;
             while (true) {
                 int encoderStatus = mEncoder.dequeueOutputBuffer(mBufferInfo, TIMEOUT_USEC);
+                Log.d("wqq",""+encoderStatus);
                 if (encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER) {
                     // no output available yet
                     break;
@@ -293,7 +276,8 @@ public class CircularEncoder {
                     mEncodedFormat = mEncoder.getOutputFormat();
                     trackIndex = mMediaMuxer.addTrack(mEncodedFormat);
                     mMediaMuxer.start();
-                    Log.d(TAG, "encoder output format changed: " + mEncodedFormat);
+                    isStartMediaMuxer.set(true);
+                    Log.d(TAG, "encoder output format changed: " + mEncodedFormat+",trackIndex:"+trackIndex);
                 } else if (encoderStatus < 0) {
                     Log.w(TAG, "unexpected result from encoder.dequeueOutputBuffer: " +
                             encoderStatus);
@@ -359,6 +343,13 @@ public class CircularEncoder {
         void shutdown() {
             if (VERBOSE) Log.d(TAG, "shutdown");
             Looper.myLooper().quit();
+            if(mMediaMuxer != null){
+                if(isStartMediaMuxer.get()) {
+                    mMediaMuxer.stop();
+                    isStartMediaMuxer.set(false);
+                }
+                mMediaMuxer.release();
+            }
         }
 
         /**
